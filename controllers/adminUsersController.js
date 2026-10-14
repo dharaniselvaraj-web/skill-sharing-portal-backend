@@ -1,46 +1,12 @@
-
-const { connectDB } = require("../database/db");
-
-// GET ALL USERS (ADMIN ONLY)
-const getAllUsers = async (req, res) => {
-  try {
-    if (
-      !req.user ||
-      String(req.user.role || "").toLowerCase() !== "admin"
-    ) {
-      return res.status(403).json({
-        message: "Admin access required."
-      });
-    }
-
-    const pool = await connectDB();
-
-    const result = await pool.request().query(`
-      SELECT
-        UserID,
-        Name,
-        Email,
-        Role
-      FROM Users
-      ORDER BY UserID DESC
-    `);
-
-    return res.status(200).json(result.recordset);
-  } catch (error) {
-    console.error("Get admin users error:", error);
-
-    return res.status(500).json({
-      message: "Failed to fetch users."
-    });
-  }
 const { connectDB } = require("../database/db");
 
 // ==========================================
 // GET ALL USERS FOR ADMIN
+// GET /api/admin/users
 // ==========================================
 const getAllUsers = async (req, res) => {
   try {
-    // Verify admin role
+    // Check admin permission
     if (
       !req.user ||
       String(req.user.role || "").toLowerCase() !== "admin"
@@ -50,8 +16,10 @@ const getAllUsers = async (req, res) => {
       });
     }
 
+    // Connect to MSSQL
     const pool = await connectDB();
 
+    // Fetch actual users from database
     const result = await pool.request().query(`
       SELECT
         UserID,
@@ -65,13 +33,16 @@ const getAllUsers = async (req, res) => {
       ORDER BY UserID DESC
     `);
 
+    // Convert database columns to frontend-friendly fields
     const users = result.recordset.map((user) => ({
       userId: user.UserID,
       name: user.Name,
       email: user.Email,
       role: user.Role,
       status: user.Status,
-      isActive: user.IsActive === true || user.IsActive === 1,
+      isActive:
+        user.IsActive === true ||
+        user.IsActive === 1,
       createdAt: user.CreatedAt
     }));
 
@@ -81,7 +52,7 @@ const getAllUsers = async (req, res) => {
     console.error("Get admin users error:", error);
 
     return res.status(500).json({
-      message: "Failed to fetch users."
+      message: "Failed to fetch users from database."
     });
   }
 };
@@ -89,6 +60,3 @@ const getAllUsers = async (req, res) => {
 module.exports = {
   getAllUsers
 };
-};
-
-module.exports = { getAllUsers };

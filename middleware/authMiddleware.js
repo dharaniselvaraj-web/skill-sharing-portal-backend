@@ -12,6 +12,21 @@ const verifyToken = async (req, res, next) => {
       });
     }
 
+    function verifyAdmin(req, res, next) {
+      if (
+        !req.user ||
+        String(req.user.role || req.user.Role || "").toLowerCase() !== "admin"
+      ) {
+        return res.status(403).json({
+          message: "Access denied. Admin permission required."
+        });
+      }
+
+      next();
+    }
+
+    module.exports = verifyAdmin;
+
     const token = authHeader.split(" ")[1];
 
     if (!token) {

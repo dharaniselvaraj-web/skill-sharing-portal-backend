@@ -1,6 +1,9 @@
 
 const { sql, connectDB } = require("../database/db");
 const { sendNotification } = require("../utils/notificationService");
+const {
+  createAdminActivity
+} = require("./adminActivityController");
 
 // GET ALL SESSIONS FOR ADMIN
 const getAdminSessions = async (req, res) => {
@@ -31,13 +34,15 @@ const getAdminSessions = async (req, res) => {
         s.MaxParticipants,
         (
           SELECT COUNT(*)
-          FROM Enrollments e
+          FROM dbo.Enrollments e
           WHERE e.SessionID = s.SessionID
             AND e.Status IN ('Pending', 'Accepted')
         ) AS EnrolledCount
-      FROM Sessions s
-      LEFT JOIN Users u ON u.UserID = s.TeacherID
-      LEFT JOIN Skills sk ON sk.SkillID = s.SkillID
+      FROM dbo.Sessions s
+      LEFT JOIN dbo.Users u
+        ON u.UserID = s.TeacherID
+      LEFT JOIN dbo.Skills sk
+        ON sk.SkillID = s.SkillID
       ORDER BY s.SessionID DESC
     `);
 
@@ -77,7 +82,7 @@ const cancelAdminSession = async (req, res) => {
       .input("SessionID", sql.Int, sessionId)
       .query(`
         SELECT SessionID, Title, Status
-        FROM Sessions
+        FROM dbo.Sessions
         WHERE SessionID = @SessionID
       `);
 
@@ -88,40 +93,71 @@ const cancelAdminSession = async (req, res) => {
     }
 
     const session = sessionResult.recordset[0];
-    const currentStatus = String(session.Status || "").toLowerCase();
+    const currentStatus = String(
+      session.Status || ""
+    ).toLowerCase();
 
-    if (["cancelled", "completed", "closed"].includes(currentStatus)) {
+    if (
+      ["cancelled", "completed", "closed"].includes(currentStatus)
+    ) {
       return res.status(400).json({
         message: `This session is already ${session.Status} and cannot be cancelled.`
       });
     }
 
+    // Cancel the session
     await pool.request()
       .input("SessionID", sql.Int, sessionId)
       .query(`
-        UPDATE Sessions
+        UPDATE dbo.Sessions
         SET Status = 'Cancelled'
         WHERE SessionID = @SessionID
       `);
 
+    // Get students who need notifications
     const affectedResult = await pool.request()
       .input("SessionID", sql.Int, sessionId)
       .query(`
         SELECT StudentID
-        FROM Enrollments
+        FROM dbo.Enrollments
         WHERE SessionID = @SessionID
           AND Status IN ('Pending', 'Accepted')
       `);
 
+    // Cancel related enrollments
     await pool.request()
       .input("SessionID", sql.Int, sessionId)
       .query(`
-        UPDATE Enrollments
+        UPDATE dbo.Enrollments
         SET Status = 'Cancelled'
         WHERE SessionID = @SessionID
           AND Status IN ('Pending', 'Accepted')
       `);
 
+    // Record admin activity
+    try {
+      const adminId = Number(req.user.id);
+
+      if (Number.isInteger(adminId) && adminId > 0) {
+        await createAdminActivity(
+          adminId,
+          "SESSION_CANCELLED",
+          `Admin cancelled session "${session.Title}" (ID: ${sessionId}).`
+        );
+      } else {
+        console.error(
+          "Activity log skipped: valid admin ID not found in req.user.id."
+        );
+      }
+    } catch (logError) {
+      // Cancellation has already succeeded.
+      console.error(
+        "Failed to save session cancellation activity:",
+        logError.message
+      );
+    }
+
+    // Notify affected students
     for (const row of affectedResult.recordset) {
       try {
         await sendNotification(
@@ -134,7 +170,7 @@ const cancelAdminSession = async (req, res) => {
         console.error(
           "Failed to notify student:",
           row.StudentID,
-          notificationError
+          notificationError.message
         );
       }
     }

@@ -9,16 +9,17 @@ const {
 } = require("../controllers/skillController");
 
 const verifyToken = require("../middleware/authMiddleware");
+const verifyAdmin = require("../middleware/adminMiddleware");
 
 const router = express.Router();
 
-// Public
-router.get("/", getSkills);
-router.get("/:id", getSkillById);
+// Read skills: authenticated users can browse the skills catalog
+router.get("/", verifyToken, getSkills);
+router.get("/:id", verifyToken, getSkillById);
 
-// Authenticated user for now
-router.post("/", verifyToken, createSkill);
-router.put("/:id", verifyToken, updateSkill);
-router.delete("/:id", verifyToken, deleteSkill);
+// Create, update and delete: admin only
+router.post("/", verifyToken, verifyAdmin, createSkill);
+router.put("/:id", verifyToken, verifyAdmin, updateSkill);
+router.delete("/:id", verifyToken, verifyAdmin, deleteSkill);
 
 module.exports = router;
